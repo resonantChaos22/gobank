@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"net/http"
 
 	_ "github.com/lib/pq"
@@ -15,6 +14,9 @@ type Storage interface {
 	UpdateAccount(*Account) error
 	GetAccountByID(int) (*Account, error)
 	GetAllAccounts() ([]*Account, error)
+	GetAccountByNumber(int) (*Account, error)
+	DeleteAllAccounts() error
+	DropAllTables() error
 }
 
 type PostgresStore struct {
@@ -46,6 +48,7 @@ func (store *PostgresStore) createAccountTable() error {
 		id serial primary key,
 		first_name varchar(50),
 		last_name varchar(50),
+		password varchar(100),
 		number serial,
 		balance numeric,
 		created_at timestamp
@@ -57,14 +60,13 @@ func (store *PostgresStore) createAccountTable() error {
 
 func (store *PostgresStore) CreateAccount(account *Account) error {
 	query := `
-	INSERT INTO account (first_name, last_name, number, balance, created_at)
-	VALUES ($1, $2, $3, $4, $5)
+	INSERT INTO account (first_name, last_name, password, number, balance, created_at)
+	VALUES ($1, $2, $3, $4, $5, $6)
 	`
-	resp, err := store.db.Query(query, account.FirstName, account.LastName, account.Number, account.Balance, account.CreatedAt)
+	_, err := store.db.Query(query, account.FirstName, account.LastName, account.EncryptedPassword, account.Number, account.Balance, account.CreatedAt)
 	if err != nil {
 		return err
 	}
-	log.Printf("%+v\n", resp)
 	return nil
 }
 
@@ -79,6 +81,19 @@ func (store *PostgresStore) GetAccountByID(id int) (*Account, error) {
 	}
 
 	return nil, MakeAPIError(fmt.Errorf("account with id %d not found", id), http.StatusNotFound)
+}
+
+func (store *PostgresStore) GetAccountByNumber(id int) (*Account, error) {
+	query := `SELECT * FROM account WHERE number=$1`
+	rows, err := store.db.Query(query, int64(id))
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		return scanIntoAccount(rows)
+	}
+
+	return nil, MakeAPIError(fmt.Errorf("account with number %d not found", id), http.StatusNotFound)
 }
 
 func (store *PostgresStore) GetAllAccounts() ([]*Account, error) {
@@ -113,10 +128,38 @@ func (store *PostgresStore) UpdateAccount(account *Account) error {
 	return nil
 }
 
+func (store *PostgresStore) DeleteAllAccounts() error {
+	queries := []string{
+		`DELETE * FROM account`,
+	}
+	for _, query := range queries {
+		_, err := store.db.Query(query)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (store *PostgresStore) DropAllTables() error {
+	queries := []string{
+		`DROP TABLE account`,
+	}
+
+	for _, query := range queries {
+		_, err := store.db.Exec(query)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func scanIntoAccount(rows *sql.Rows) (*Account, error) {
 	account := new(Account)
 
-	err := rows.Scan(&account.ID, &account.FirstName, &account.LastName, &account.Number, &account.Balance, &account.CreatedAt)
+	err := rows.Scan(&account.ID, &account.FirstName, &account.LastName, &account.EncryptedPassword, &account.Number, &account.Balance, &account.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
