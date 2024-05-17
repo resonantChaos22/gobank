@@ -7,11 +7,15 @@ import (
 	"log"
 	"os"
 	"sync"
+
+	"github.com/resonantChaos22/gobank/api"
+	storage "github.com/resonantChaos22/gobank/models"
+	"github.com/resonantChaos22/gobank/types"
 )
 
-func seedAccount(wg *sync.WaitGroup, store Storage, f, l, pw string, accountChan chan *Account) {
+func seedAccount(wg *sync.WaitGroup, store storage.Storage, f, l, pw string, accountChan chan *types.Account) {
 	defer wg.Done()
-	account, err := NewAccount(f, l, pw)
+	account, err := types.NewAccount(f, l, pw)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -23,9 +27,9 @@ func seedAccount(wg *sync.WaitGroup, store Storage, f, l, pw string, accountChan
 	accountChan <- account
 }
 
-func seedAccounts(store Storage) {
+func seedAccounts(store storage.Storage) {
 	var wg sync.WaitGroup
-	accountChan := make(chan *Account)
+	accountChan := make(chan *types.Account)
 	wg.Add(4)
 	go seedAccount(&wg, store, "Shreyash", "Pandey", "Test@123", accountChan)
 	go seedAccount(&wg, store, "Jeewan", "Singh", "Test@123", accountChan)
@@ -37,7 +41,7 @@ func seedAccounts(store Storage) {
 		close(accountChan)
 	}()
 
-	var accounts []*Account
+	var accounts []*types.Account
 	for account := range accountChan {
 		accounts = append(accounts, account)
 	}
@@ -48,7 +52,7 @@ func seedAccounts(store Storage) {
 	}
 }
 
-func writeToJSON(filename string, accounts []*Account) error {
+func writeToJSON(filename string, accounts []*types.Account) error {
 	err := os.Remove(filename)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -77,7 +81,7 @@ func main() {
 	exit := flag.Bool("exit", false, "Exit the Application")
 	flag.Parse()
 
-	store, err := NewPostgresStore()
+	store, err := storage.NewPostgresStore()
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -103,6 +107,6 @@ func main() {
 
 	// fmt.Printf("%+v\n", store)
 
-	server := NewServer(":8080", store)
+	server := api.NewServer(":8080", store)
 	server.Run()
 }
